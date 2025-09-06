@@ -1,0 +1,5 @@
+{
+  "vertex_shader": "\nattribute vec2 a_position;\nattribute vec3 a_color;\nuniform mat3 u_transform;\nvarying vec3 v_color;\n\nvoid main() {\n    // Transform position\n    vec3 position = u_transform * vec3(a_position, 1.0);\n    gl_Position = vec4(position.xy, 0.0, 1.0);\n\n    // Pass color to fragment shader\n    v_color = a_color;\n\n    // Set point size for dots\n    gl_PointSize = 4.0;\n}\n",
+  "fragment_shader": "\nprecision mediump float;\nvarying vec3 v_color;\n\nvoid main() {\n    gl_FragColor = vec4(v_color, 1.0);\n}\n",
+  "picking_fragment_shader": "\nprecision mediump float;\nuniform vec3 u_pick_color;\n\nvoid main() {\n    gl_FragColor = vec4(u_pick_color, 1.0);\n}\n"
+} 
