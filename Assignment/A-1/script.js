@@ -13,7 +13,7 @@ let interactionMode = 'select';
 let selectedVertex = null;
 let selectedPerson = null;
 let isDragging = false;
- 
+
 // Point classification and constants
 const BBOX_POINT_COUNT = 4;
 let INNER_POINT_COUNT = 12;
@@ -339,7 +339,7 @@ function drawVertices() {
 
 function drawObstacle() {
     if (!obstacle) return;
-    ctx.fillStyle = 'rgba(128, 128, 128, 0.7)';
+    ctx.fillStyle = 'rgba(128, 128, 128)';
     ctx.beginPath();
     ctx.moveTo(obstacle.points[0].x, obstacle.points[0].y);
     for (let i = 1; i < obstacle.points.length; i++) ctx.lineTo(obstacle.points[i].x, obstacle.points[i].y);
@@ -433,8 +433,15 @@ canvas.addEventListener('mousedown', (e) => {
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
     
     if (interactionMode === 'move-point') {
-        selectedVertex = findClosestVertex(x, y, 15);
-        if (selectedVertex !== -1) { isDragging = true; updateStatus(`Moving vertex ${selectedVertex}`); }
+       const closest = findClosestVertex(x, y, 15);
+        const obstacleStartIndex = BBOX_POINT_COUNT + INNER_POINT_COUNT;
+
+        // Prevent selecting obstacle vertices
+        if (closest !== -1 && closest < obstacleStartIndex) {
+            selectedVertex = closest;
+            isDragging = true;
+            updateStatus(`Moving vertex ${selectedVertex}`);
+        }
     } else if (interactionMode === 'move-person') {
         const personInfo = findClosestPerson(x, y);
         if (personInfo) {
@@ -521,6 +528,179 @@ function setInteractionMode(mode) {
     document.getElementById(`mode-${mode}`).classList.add('active');
     updateStatus(`Mode set to: ${mode}`);
 }
+
+const MAX_SCALE_FACTOR = 1.5;   // Max allowed scaling (50% increase)
+const MIN_SCALE_FACTOR = 1.0;   // Minimum (original size)
+let currentScaleFactor = 1.0;
+
+function scaleObstacle(factorChange) {
+    const newScale = currentScaleFactor + factorChange;
+
+    if (newScale > MAX_SCALE_FACTOR || newScale < MIN_SCALE_FACTOR) return;
+
+    const centerX = obstacle.x;
+    const centerY = obstacle.y;
+
+    // Calculate new scaled obstacle points
+    const newPoints = obstacle.points.map(point => {
+        const dx = point.x - centerX;
+        const dy = point.y - centerY;
+        return {
+            x: centerX + dx * (newScale / currentScaleFactor),
+            y: centerY + dy * (newScale / currentScaleFactor)
+        };
+    });
+
+    // Backup current obstacle points
+    const oldPoints = [...obstacle.points];
+
+    // Apply scaling temporarily
+    obstacle.points = newPoints;
+
+    const obstacleStartIndex = BBOX_POINT_COUNT + INNER_POINT_COUNT;
+    for (let i = 0; i < OBSTACLE_POINT_COUNT; i++) {
+        vertices[obstacleStartIndex + i] = { ...newPoints[i] };
+    }
+
+    // Recompute edges based on new obstacle points
+    const constraintEdges = [
+        [0,1],[1,2],[2,3],[3,0],
+        [obstacleStartIndex, obstacleStartIndex + 1],
+        [obstacleStartIndex + 1, obstacleStartIndex + 2],
+        [obstacleStartIndex + 2, obstacleStartIndex + 3],
+        [obstacleStartIndex + 3, obstacleStartIndex]
+    ];
+    edges = generateInitialEdges(constraintEdges);
+
+    // Handle intersecting edges
+    for (let i = 0; i < edges.length; i++) {
+        for (let j = i + 1; j < edges.length; j++) {
+            const e1 = edges[i];
+            const e2 = edges[j];
+
+            if (e1[0] === e2[0] || e1[0] === e2[1] || e1[1] === e2[0] || e1[1] === e2[1]) continue;
+
+            if (doEdgesCross(e1[0], e1[1], e2[0], e2[1])) {
+                const p1 = vertices[e1[0]], p2 = vertices[e1[1]];
+                const p3 = vertices[e2[0]], p4 = vertices[e2[1]];
+
+                const dist1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                const dist2 = Math.hypot(p3.x - p4.x, p3.y - p4.y);
+
+                const edgeToRemove = dist1 > dist2 ? e1 : e2;
+                const indexToRemove = edges.findIndex(e => (e[0] === edgeToRemove[0] && e[1] === edgeToRemove[1]) || (e[0] === edgeToRemove[1] && e[1] === edgeToRemove[0]));
+
+                if (indexToRemove !== -1) {
+                    edges.splice(indexToRemove, 1);
+                }
+            }
+        }
+    }
+
+    // Remove people inside the obstacle after scaling
+    const originalPeopleCount = people.length;
+    people = people.filter(person => !isPointInsideObstacle(person));
+    const removedPeopleCount = originalPeopleCount - people.length;
+
+    triangulate();
+    currentScaleFactor = newScale;
+    draw();
+
+    let msg = `Obstacle scaled to ${Math.round(currentScaleFactor * 100)}%`;
+    if (removedPeopleCount > 0) {
+        msg += ` | Removed ${removedPeopleCount} person(s) that entered obstacle.`;
+    }
+
+    updateStatus(msg);
+};
+
+
+
+
+document.getElementById('scale-obstacle-up').addEventListener('click', () => {
+    scaleObstacle(0.1);  // Increase size by 10%
+});
+
+document.getElementById('scale-obstacle-in').addEventListener('click', () => {
+    scaleObstacle(-0.1); // Decrease size by 10%
+});
+
+function rotateObstacle() {
+    const angle = (15 * Math.PI) / 180;  // 15 degrees in radians
+    const centerX = obstacle.x;
+    const centerY = obstacle.y;
+
+    const newPoints = obstacle.points.map(point => {
+        const dx = point.x - centerX;
+        const dy = point.y - centerY;
+        return {
+            x: centerX + dx * Math.cos(angle) - dy * Math.sin(angle),
+            y: centerY + dx * Math.sin(angle) + dy * Math.cos(angle)
+        };
+    });
+
+    // Apply the rotation
+    obstacle.points = newPoints;
+
+    const obstacleStartIndex = BBOX_POINT_COUNT + INNER_POINT_COUNT;
+    for (let i = 0; i < OBSTACLE_POINT_COUNT; i++) {
+        vertices[obstacleStartIndex + i] = { ...newPoints[i] };
+    }
+
+    // Recompute edges based on new rotated obstacle
+    const constraintEdges = [
+        [0,1],[1,2],[2,3],[3,0],
+        [obstacleStartIndex, obstacleStartIndex + 1],
+        [obstacleStartIndex + 1, obstacleStartIndex + 2],
+        [obstacleStartIndex + 2, obstacleStartIndex + 3],
+        [obstacleStartIndex + 3, obstacleStartIndex]
+    ];
+    edges = generateInitialEdges(constraintEdges);
+
+    // Handle intersecting edges (like in scaling)
+    for (let i = 0; i < edges.length; i++) {
+        for (let j = i + 1; j < edges.length; j++) {
+            const e1 = edges[i];
+            const e2 = edges[j];
+
+            if (e1[0] === e2[0] || e1[0] === e2[1] || e1[1] === e2[0] || e1[1] === e2[1]) continue;
+
+            if (doEdgesCross(e1[0], e1[1], e2[0], e2[1])) {
+                const p1 = vertices[e1[0]], p2 = vertices[e1[1]];
+                const p3 = vertices[e2[0]], p4 = vertices[e2[1]];
+
+                const dist1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                const dist2 = Math.hypot(p3.x - p4.x, p3.y - p4.y);
+
+                const edgeToRemove = dist1 > dist2 ? e1 : e2;
+                const indexToRemove = edges.findIndex(e => (e[0] === edgeToRemove[0] && e[1] === edgeToRemove[1]) || (e[0] === edgeToRemove[1] && e[1] === edgeToRemove[0]));
+
+                if (indexToRemove !== -1) {
+                    edges.splice(indexToRemove, 1);
+                }
+            }
+        }
+    }
+
+    // Remove people inside obstacle after rotation
+    const originalPeopleCount = people.length;
+    people = people.filter(person => !isPointInsideObstacle(person));
+    const removedPeopleCount = originalPeopleCount - people.length;
+
+    triangulate();
+    draw();
+
+    let msg = 'Obstacle rotated by 15°.';
+    if (removedPeopleCount > 0) {
+        msg += ` Removed ${removedPeopleCount} person(s) that entered obstacle.`;
+    }
+
+    updateStatus(msg);
+};
+
+
+document.getElementById('rotate-obstacle').addEventListener('click', rotateObstacle);
+
 
 document.getElementById('mode-select').addEventListener('click', () => setInteractionMode('select'));
 document.getElementById('mode-add-edge').addEventListener('click', () => {

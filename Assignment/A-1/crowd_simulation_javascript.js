@@ -283,7 +283,7 @@ class EnhancedCrowdSimulationRenderer {
         console.log(`🔄 Rotating obstacle ${this.selectedObstacle.id} by ${this.rotationAngle}°`);
 
         const obstacle = this.selectedObstacle;
-        const angleRad = (this.rotationAngle * Math.PI) / 180;
+        const angleRad = (this.rotationAngle * Math.PI) / 90;
 
         // Store old vertex positions for edge reconnection
         const oldPositions = obstacle.vertexIndices.map(i => ({
@@ -1270,6 +1270,8 @@ class EnhancedCrowdSimulationRenderer {
         this.updateUI();
         this.render();
     }
+
+
 
     toggleDebug() {
         this.debugMode = !this.debugMode;
