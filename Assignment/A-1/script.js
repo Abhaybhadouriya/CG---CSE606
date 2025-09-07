@@ -2,6 +2,7 @@
 const canvas = document.getElementById('simulationCanvas');
 const ctx = canvas.getContext('2d');
 const statusElement = document.getElementById('status');
+let firstVertexForEdge = null;
 
 // Simulation state
 let vertices = [];
@@ -13,6 +14,7 @@ let interactionMode = 'select';
 let selectedVertex = null;
 let selectedPerson = null;
 let isDragging = false;
+let selected = { type: null, index: null, extra: null };  // type: 'vertex' | 'person' | 'edge' | 'obstacle'
 
 // Point classification and constants
 const BBOX_POINT_COUNT = 4;
@@ -26,15 +28,15 @@ function initSimulation() {
     edges = [];
     triangles = [];
     people = [];
-    
+        
     const padding = 40;
     const rectWidth = canvas.width - 2 * padding;
     const rectHeight = canvas.height - 2 * padding;
     
-    vertices.push({ x: padding, y: padding });
-    vertices.push({ x: padding + rectWidth, y: padding });
-    vertices.push({ x: padding + rectWidth, y: padding + rectHeight });
-    vertices.push({ x: padding, y: padding + rectHeight });
+    vertices.push({ x: padding, y: padding, fixed: true });
+    vertices.push({ x: padding + rectWidth, y: padding, fixed: true });
+    vertices.push({ x: padding + rectWidth, y: padding + rectHeight, fixed: true });
+    vertices.push({ x: padding, y: padding + rectHeight, fixed: true });
     
     const constraintEdges = [[0, 1], [1, 2], [2, 3], [3, 0]];
     
@@ -88,7 +90,7 @@ function initSimulation() {
     }
     
     triangulate();
-    updateStatus('Simulation initialized. Select an interaction mode to begin.');
+    // updateSelectionInfo('Simulation initialized. Select an interaction mode to begin.');
 }
 
 function doesEdgeIntersectObstacle(p1_idx, p2_idx) {
@@ -301,15 +303,26 @@ function distanceToLineSegment(x, y, x1, y1, x2, y2) {
 }
 
 function drawEdges() {
-    ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 2;
     for (const edge of edges) {
         const p0 = vertices[edge[0]], p1 = vertices[edge[1]];
         ctx.beginPath();
         ctx.moveTo(p0.x, p0.y);
         ctx.lineTo(p1.x, p1.y);
+
+        if (selected.type === 'edge' &&
+            ((selected.extra[0] === edge[0] && selected.extra[1] === edge[1]) ||
+             (selected.extra[0] === edge[1] && selected.extra[1] === edge[0]))) {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 3;
+        } else {
+            ctx.strokeStyle = '#ccc';
+            ctx.lineWidth = 2;
+        }
+
         ctx.stroke();
     }
+
     const obstacleStartIndex = vertices.length - OBSTACLE_POINT_COUNT;
     ctx.strokeStyle = '#a52a2a';
     ctx.lineWidth = 3;
@@ -319,17 +332,30 @@ function drawEdges() {
         ctx.beginPath();
         ctx.moveTo(p0.x, p0.y);
         ctx.lineTo(p1.x, p1.y);
+
+        if (selected.type === 'obstacle') {
+            ctx.strokeStyle = 'darkgray';
+        }
+
         ctx.stroke();
     }
 }
 
 function drawVertices() {
-    const obstacleStartIndex = vertices.length - OBSTACLE_POINT_COUNT;
+  const obstacleStartIndex = vertices.length - OBSTACLE_POINT_COUNT;
     for (let i = 0; i < vertices.length; i++) {
         const v = vertices[i];
         ctx.beginPath();
-        if (i >= obstacleStartIndex) { ctx.fillStyle = '#a52a2a'; ctx.arc(v.x, v.y, 6, 0, Math.PI * 2); }
-        else { ctx.fillStyle = '#fff'; ctx.arc(v.x, v.y, 5, 0, Math.PI * 2); }
+        ctx.arc(v.x, v.y, 6, 0, Math.PI * 2);
+
+        if (selected.type === 'vertex' && selected.index === i) {
+            ctx.fillStyle = 'red';
+        } else if (i >= obstacleStartIndex) {
+            ctx.fillStyle = '#a52a2a';  // Obstacle vertex
+        } else {
+            ctx.fillStyle = '#fff';
+        }
+
         ctx.fill();
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 1;
@@ -339,19 +365,22 @@ function drawVertices() {
 
 function drawObstacle() {
     if (!obstacle) return;
-    ctx.fillStyle = 'rgba(128, 128, 128)';
+    ctx.fillStyle = (selected.type === 'obstacle') ? 'darkgray' : 'rgba(128, 128, 128, 1)';
     ctx.beginPath();
     ctx.moveTo(obstacle.points[0].x, obstacle.points[0].y);
-    for (let i = 1; i < obstacle.points.length; i++) ctx.lineTo(obstacle.points[i].x, obstacle.points[i].y);
+    for (let i = 1; i < obstacle.points.length; i++) {
+        ctx.lineTo(obstacle.points[i].x, obstacle.points[i].y);
+    }
     ctx.closePath();
     ctx.fill();
 }
 
 function drawPeople() {
-    for (const person of people) {
+     for (let i = 0; i < people.length; i++) {
+        const person = people[i];
         ctx.beginPath();
         ctx.arc(person.x, person.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = (selected.type === 'person' && selected.index === i) ? 'red' : '#000';
         ctx.fill();
     }
 }
@@ -408,7 +437,7 @@ function addPerson() {
     people.push(person);
     triangulate(); 
     draw();
-    updateStatus('Added a person. Total: ' + people.length);
+    updateSelectionInfo('Added a person. Total: ' + people.length);
 }
 
 function removePerson() {
@@ -416,38 +445,50 @@ function removePerson() {
         people.pop();
         triangulate(); 
         draw();
-        updateStatus('Removed a person. Total: ' + people.length);
+        updateSelectionInfo('Removed a person. Total: ' + people.length);
     } else {
-        updateStatus('No people to remove.');
+        updateSelectionInfo('No people to remove.');
     }
 }
 
-function reconnectObstacle() {
-    initSimulation();
-    draw();
-    updateStatus('Reconnected and re-triangulated the simulation.');
+// function reconnectObstacle() {
+//     initSimulation();
+//     draw();
+//     updateSelectionInfo('Reconnected and re-triangulated the simulation.');
+// }
+function updateSelectionInfo(content) {
+    const infoDiv = document.getElementById('selection-info');
+    infoDiv.innerHTML = content;
+    infoDiv.style.transition = 'background 0.5s ease';
+    infoDiv.style.background = '#d1ffd1';  // Light green highlight
+
+    setTimeout(() => {
+        infoDiv.style.background = '#f9f9f9';  // Revert to default
+    }, 500);
 }
 
 canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
     if (interactionMode === 'move-point') {
-       const closest = findClosestVertex(x, y, 15);
+        const closest = findClosestVertex(x, y, 15);
         const obstacleStartIndex = BBOX_POINT_COUNT + INNER_POINT_COUNT;
 
-        // Prevent selecting obstacle vertices
-        if (closest !== -1 && closest < obstacleStartIndex) {
+        if (closest !== -1 && closest < obstacleStartIndex && !vertices[closest].fixed) {
             selectedVertex = closest;
             isDragging = true;
-            updateStatus(`Moving vertex ${selectedVertex}`);
+            updateSelectionInfo(`Moving vertex ${selectedVertex}`);
+        } else if (closest !== -1 && vertices[closest].fixed) {
+            updateSelectionInfo('This vertex is fixed and cannot be moved.');
         }
     } else if (interactionMode === 'move-person') {
         const personInfo = findClosestPerson(x, y);
         if (personInfo) {
             selectedPerson = personInfo.index;
             isDragging = true;
-            updateStatus(`Moving person ${selectedPerson + 1}`);
+            updateSelectionInfo(`Moving person ${selectedPerson + 1}`);
         }
     } else if (interactionMode === 'remove-edge') {
         const edgeToRemove = findClosestEdge(x, y);
@@ -458,20 +499,105 @@ canvas.addEventListener('mousedown', (e) => {
         const isObstacleEdge = edgeToRemove[0] >= obstacleStartIndex && edgeToRemove[1] >= obstacleStartIndex;
 
         if(isBboxEdge || isObstacleEdge) {
-            updateStatus('Cannot remove a boundary edge.');
+            updateSelectionInfo('Cannot remove a boundary edge.');
             return;
         }
 
         const edgeIndex = edges.findIndex(e => (e[0] === edgeToRemove[0] && e[1] === edgeToRemove[1]) || (e[0] === edgeToRemove[1] && e[1] === edgeToRemove[0]));
         if (edgeIndex > -1) {
             edges.splice(edgeIndex, 1);
-            // Re-triangulate, "banning" the removed edge to force a new tiling
             triangulate({ bannedEdges: [edgeToRemove] });
             draw();
-            updateStatus('Edge removed.');
+            updateSelectionInfo('Edge removed.');
         }
+    }else  if (interactionMode === 'add-edge') {
+        const clickedVertex = findClosestVertex(x, y, 15);
+        if (clickedVertex === -1) return;
+
+        if (firstVertexForEdge === null) {
+            firstVertexForEdge = clickedVertex;
+            updateSelectionInfo(`Selected vertex ${firstVertexForEdge}. Now select the second vertex to add edge.`);
+        } else {
+            if (firstVertexForEdge === clickedVertex) {
+                updateSelectionInfo('Cannot add edge to same vertex.');
+                firstVertexForEdge = null;
+                return;
+            }
+
+            // Check if edge already exists
+            const alreadyExists = edges.some(e => 
+                (e[0] === firstVertexForEdge && e[1] === clickedVertex) ||
+                (e[1] === firstVertexForEdge && e[0] === clickedVertex)
+            );
+            if (alreadyExists) {
+                updateSelectionInfo('Edge already exists.');
+                firstVertexForEdge = null;
+                return;
+            }
+
+            // Check if new edge crosses obstacle or existing edges
+            if (!isLineOfSightClear(firstVertexForEdge, clickedVertex)) {
+                updateSelectionInfo('Edge crosses obstacle, cannot add.');
+                firstVertexForEdge = null;
+                return;
+            }
+
+            let crossesAnotherEdge = edges.some(edge =>
+                doEdgesCross(firstVertexForEdge, clickedVertex, edge[0], edge[1])
+            );
+            if (crossesAnotherEdge) {
+                updateSelectionInfo('New edge would intersect existing edge.');
+                firstVertexForEdge = null;
+                return;
+            }
+
+            // All clear → Add the edge
+            edges.push([firstVertexForEdge, clickedVertex]);
+            triangulate();
+            draw();
+            updateSelectionInfo(`Edge added between vertex ${firstVertexForEdge} and vertex ${clickedVertex}.`);
+
+            firstVertexForEdge = null;
+        }
+    }else  if (interactionMode === 'select') {
+         const vertexIdx = findClosestVertex(x, y, 15);
+        if (vertexIdx !== -1) {
+            selected = { type: 'vertex', index: vertexIdx, extra: null };
+            updateSelectionInfo(`<strong>Vertex Selected:</strong> Index ${vertexIdx} (x: ${vertices[vertexIdx].x.toFixed(1)}, y: ${vertices[vertexIdx].y.toFixed(1)})`);
+            draw();
+            return;
+        }
+
+        const personInfo = findClosestPerson(x, y);
+        if (personInfo) {
+            selected = { type: 'person', index: personInfo.index, extra: null };
+            updateSelectionInfo(`<strong>Person Selected:</strong> Index ${personInfo.index + 1} (x: ${personInfo.person.x.toFixed(1)}, y: ${personInfo.person.y.toFixed(1)})`);
+            draw();
+            return;
+        }
+
+        const edge = findClosestEdge(x, y, 10);
+        if (edge) {
+            selected = { type: 'edge', index: null, extra: edge };
+            updateSelectionInfo(`<strong>Edge Selected:</strong> Between Vertex ${edge[0]} and Vertex ${edge[1]}`);
+            draw();
+            return;
+        }
+
+        // Obstacle selection (simple bounding box hit test)
+        if (isPointInsideObstacle({ x, y })) {
+            selected = { type: 'obstacle', index: null, extra: null };
+            updateSelectionInfo(`<strong>Obstacle Selected</strong>`);
+            draw();
+            return;
+        }
+
+        selected = { type: null, index: null, extra: null };
+        updateSelectionInfo('Nothing selected.');
+        draw();
     }
 });
+
 
 canvas.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
@@ -526,11 +652,11 @@ function setInteractionMode(mode) {
     interactionMode = mode;
     document.querySelectorAll('.btn-group button').forEach(btn => btn.classList.remove('active'));
     document.getElementById(`mode-${mode}`).classList.add('active');
-    updateStatus(`Mode set to: ${mode}`);
+    updateSelectionInfo(`Mode set to: ${mode}`);
 }
 
 const MAX_SCALE_FACTOR = 1.5;   // Max allowed scaling (50% increase)
-const MIN_SCALE_FACTOR = 1.0;   // Minimum (original size)
+const MIN_SCALE_FACTOR = 0.5;   // Minimum (original size)
 let currentScaleFactor = 1.0;
 
 function scaleObstacle(factorChange) {
@@ -611,7 +737,7 @@ function scaleObstacle(factorChange) {
         msg += ` | Removed ${removedPeopleCount} person(s) that entered obstacle.`;
     }
 
-    updateStatus(msg);
+    updateSelectionInfo(msg);
 };
 
 
@@ -695,8 +821,13 @@ function rotateObstacle() {
         msg += ` Removed ${removedPeopleCount} person(s) that entered obstacle.`;
     }
 
-    updateStatus(msg);
+    updateSelectionInfo(msg);
 };
+document.getElementById('deselect-btn').addEventListener('click', () => {
+    selected = { type: null, index: null, extra: null };
+    updateSelectionInfo('Nothing selected.');
+    draw();
+});
 
 
 document.getElementById('rotate-obstacle').addEventListener('click', rotateObstacle);
@@ -705,15 +836,16 @@ document.getElementById('rotate-obstacle').addEventListener('click', rotateObsta
 document.getElementById('mode-select').addEventListener('click', () => setInteractionMode('select'));
 document.getElementById('mode-add-edge').addEventListener('click', () => {
     setInteractionMode('add-edge');
-    updateStatus('Mode Add-Edge is disabled; layout is auto-generated.');
+    updateSelectionInfo('Mode Add-Edge is disabled; layout is auto-generated.');
 });
 document.getElementById('mode-remove-edge').addEventListener('click', () => setInteractionMode('remove-edge'));
 document.getElementById('mode-move-point').addEventListener('click', () => setInteractionMode('move-point'));
 document.getElementById('mode-move-person').addEventListener('click', () => setInteractionMode('move-person'));
-document.getElementById('reset-btn').addEventListener('click', () => { initSimulation(); draw(); });
+document.getElementById('reset-btn').addEventListener('click', () => { initSimulation(); draw();  });
 document.getElementById('add-person').addEventListener('click', addPerson);
 document.getElementById('remove-person').addEventListener('click', removePerson);
-document.getElementById('reconnect-obstacle').addEventListener('click', reconnectObstacle);
+// document.getElementById('reconnect-obstacle').addEventListener('click', reconnectObstacle);
 
 initSimulation();
 draw();
+

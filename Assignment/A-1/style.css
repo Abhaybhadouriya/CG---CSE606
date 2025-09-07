@@ -147,8 +147,26 @@ button.active {
     font-size: 0.9rem;
     opacity: 0.8;
 }
+#selection-info {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    color: #333;
+    padding: 10px;
+    margin-top: 10px;
+    border: 1px solid #ccc;
+    background: #f9f9f9;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transition: background 0.5s ease;
+}
+
+#selection-info strong {
+    color: #007BFF;
+}
+
 @media (max-width: 768px) {
     .content {
         flex-direction: column;
     }
 }
+

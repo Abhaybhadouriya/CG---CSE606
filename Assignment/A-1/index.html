@@ -18,6 +18,10 @@
                 <h2>Simulation Canvas</h2>
                 <canvas id="simulationCanvas" width="700" height="500"></canvas>
                 <div class="status" id="status">Ready. Select an interaction mode to begin.</div>
+                <div id="selection-info" style="margin-top: 10px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9;">
+    No selection yet.
+</div>
+
             </div>
 
             <div class="controls">
@@ -27,6 +31,7 @@
                     <h3>Interaction Mode</h3>
                     <div class="btn-group">
                         <button id="mode-select" class="active">Select</button>
+                        <button id="deselect-btn">Deselect</button>
                         <button id="mode-add-edge">Add Edge</button>
                         <button id="mode-remove-edge">Remove Edge</button>
                         <button id="mode-move-point">Move Point</button>
@@ -46,10 +51,10 @@
                 <div class="control-group">
                     <h3>Actions</h3>
                     <div class="btn-group">
-                        <button id="reset-btn">Reset Canvas</button>
+                        <button  id="reset-btn">Reset Canvas</button>
                         <button id="add-person">Add Person</button>
                         <button id="remove-person">Remove Person</button>
-                        <button id="reconnect-obstacle">Reconnect Obstacle</button>
+                        <!-- <button id="reconnect-obstacle">Reconnect Obstacle</button> -->
                     </div>
                 </div>
 
@@ -78,7 +83,7 @@
                         <li>Use <strong>Add Edge</strong> mode to connect points and create triangles.</li>
                         <li>Use <strong>Move Point</strong> mode to adjust vertex positions.</li>
                         <li>Use <strong>Move Person</strong> mode to drag people between triangles.</li>
-                        <li>Use <strong>Reconnect Obstacle</strong> to re-run the connection logic.</li>
+                        <li>Use <strong>Reset</strong> to re-run the connection logic.</li>
                         <li><strong>Edges will never intersect</strong>—invalid operations are prevented.</li>
                     </ul>
                 </div>
